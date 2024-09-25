@@ -1,4 +1,4 @@
-prefect-worker:
+prefect-server:
   ingress:
     host:
       hostname: prefect.local.itlusions.com
