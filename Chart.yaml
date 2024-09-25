@@ -8,3 +8,4 @@ dependencies:
   - name: prefect-server
     version: "2024.9.20135602" # Match the targetRevision
     repository: "https://prefecthq.github.io/prefect-helm"
+    alias: prefect-server
