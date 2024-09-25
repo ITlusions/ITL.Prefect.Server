@@ -223,7 +223,8 @@ prefect-server:
     # -- service external traffic policy
     externalTrafficPolicy: Cluster
     ## -- additional custom annotations for server service
-    annotations: {}
+    annotations:
+      external-dns.alpha.kubernetes.io/hostname: pfs.apps.public.k8s.int.itlusions.com
 
   # Ingress configuration
   ingress:
