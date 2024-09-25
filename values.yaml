@@ -214,7 +214,7 @@ prefect-server:
       #   nodePort: ""
 
     # -- service type
-    type: ClusterIP
+    type: Loadbalancer
     # -- service Cluster IP
     clusterIP: ""
 
