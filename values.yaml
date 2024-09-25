@@ -10,7 +10,7 @@ prefect-server:
   commonLabels:
     environment: "demo"
   # -- annotations to add to all deployed objects
-  commonAnnotations: {"itl-pfs"}
+  commonAnnotations: {}
 
   ## Deployment Configuration
   server:
