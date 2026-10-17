@@ -12,25 +12,17 @@ prefect-server:
   # -- annotations to add to all deployed objects
   commonAnnotations: {}
 
+  ## Global image configuration; the upstream chart reads the image from global.prefect.image
+  global:
+    prefect:
+      image:
+        repository: prefecthq/prefect
+        prefectTag: 3.8.8-python3.11
+        pullPolicy: IfNotPresent
+        pullSecrets: []
+
   ## Deployment Configuration
   server:
-    image:
-      # -- server image repository
-      repository: prefecthq/prefect
-      ## prefect tag is pinned to the latest available image tag at packaging time.  Update the value here to
-      ## override pinned tag
-      # -- prefect image tag (immutable tags are recommended)
-      prefectTag: 3-latest
-      # -- server image pull policy
-      pullPolicy: IfNotPresent
-      ## Optionally specify an array of imagePullSecrets.
-      ## Secrets must be manually created in the namespace.
-      ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
-      ## e.g:
-      ## pullSecrets:
-      ##   - myRegistryKeySecretName
-      # -- server image pull secrets
-      pullSecrets: []
 
     # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#priorityclass
     # -- priority class name to use for the server pods; if the priority class is empty or doesn't exist, the server pods are scheduled without a priority class
@@ -42,21 +34,9 @@ prefect-server:
     # sets PREFECT_LOGGING_SERVER_LEVEL
     loggingLevel: WARNING
 
-    # -- sets PREFECT_API_URL
-    prefectApiUrl: http://localhost:4200/api
-
-    # -- sets PREFECT_SERVER_API_HOST
-    prefectApiHost: 0.0.0.0
-
-    ## If you want to run the UI seperately from the server, you will need to set the UI-specific URLs below
     uiConfig:
-      # -- set PREFECT_UI_ENABLED; enable the UI on the server
-      enabled: true
-      # -- sets PREFECT_UI_API_URL
-      prefectUiApiUrl: ""
-      # -- sets PREFECT_UI_URL
-      prefectUiUrl: ""
-      # -- sets PREFECT_UI_STATIC_DIRECTORY
+      # -- sets PREFECT_UI_API_URL; must be the browser-facing ingress URL
+      prefectUiApiUrl: "http://prefect.localhost:8080/api"
       prefectUiStaticDirectory: "/ui_build"
 
     # see here for a full list of possible environment variables - https://docs.prefect.io/latest/api-ref/prefect/settings/
@@ -97,33 +77,6 @@ prefect-server:
         cpu: "1"
         memory: 1Gi
 
-    # ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
-    livenessProbe:
-      enabled: false
-      config:
-        # -- The number of seconds to wait before starting the first probe.
-        initialDelaySeconds: 10
-        # -- The number of seconds to wait between consecutive probes.
-        periodSeconds: 10
-        # -- The number of seconds to wait for a probe response before considering it as failed.
-        timeoutSeconds: 5
-        # -- The number of consecutive failures allowed before considering the probe as failed.
-        failureThreshold: 3
-        # -- The minimum consecutive successes required to consider the probe successful.
-        successThreshold: 1
-    readinessProbe:
-      enabled: false
-      config:
-        # -- The number of seconds to wait before starting the first probe.
-        initialDelaySeconds: 10
-        # -- The number of seconds to wait between consecutive probes.
-        periodSeconds: 10
-        # -- The number of seconds to wait for a probe response before considering it as failed.
-        timeoutSeconds: 5
-        # -- The number of consecutive failures allowed before considering the probe as failed.
-        failureThreshold: 3
-        # -- The minimum consecutive successes required to consider the probe successful.
-        successThreshold: 1
 
     ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
     podSecurityContext:
@@ -229,7 +182,7 @@ prefect-server:
   # Ingress configuration
   ingress:
     # -- enable ingress record generation for server
-    enabled: false
+    enabled: true
 
     # -- port for the ingress' main path
     servicePort: server-svc-port
@@ -237,10 +190,10 @@ prefect-server:
     ## This is supported in Kubernetes 1.18+ and required if you have more than one IngressClass marked as the default for your cluster .
     ## ref: https://kubernetes.io/blog/2020/04/02/improvements-to-the-ingress-api-in-kubernetes-1.18/
     # -- IngressClass that will be used to implement the Ingress (Kubernetes 1.18+)
-    className: ""
+    className: traefik
     host:
       # -- default host for the ingress record
-      hostname: prefect.local
+      hostname: prefect.localhost
       # -- default path for the ingress record
       path: /
       # -- ingress path type
@@ -301,54 +254,31 @@ prefect-server:
 
   # Secret configuration
   secret:
-    # -- whether to create a Secret containing the PostgreSQL connection string
-    create: true
-    # -- name for the Secret containing the PostgreSQL connection string
-    # To provide an existing Secret, provide a name and set `create=false`
-    name: ""
+    # -- the connection secret is created by this chart (templates/postgres.yaml)
+    create: false
+    name: prefect-postgres
 
-    # -- username for the PostgreSQL connection string
-    username: ""
-    # -- password for the PostgreSQL connection string
-    password: ""
-    # -- host for the PostgreSQL connection string
-    host: ""
-    # -- port for the PostgreSQL connection string
-    port: ""
-    # -- database for the PostgreSQL connection string
-    database: ""
-
-  # PostgreSQL subchart - default overrides
   postgresql:
-    # -- enable use of bitnami/postgresql subchart
-    enabled: true
-    auth:
-      # -- determines whether an admin user is created within postgres
-      enablePostgresUser: false
-      # -- name for a custom database
-      database: server
-      # -- name for a custom user
-      username: prefect
-      ## This is the password for `username` and will be set within the secret `{fullnameOverride}-postgresql` at the key `password`.
-      ## This argument is only relevant when using the Postgres database included in the chart.
-      ## For an external postgres connection, you must create and use `existingSecret` instead.
-      # -- password for the custom user. Ignored if `auth.existingSecret` with key `password` is provided
-      password: prefect-rocks
+    enabled: false
 
-    ## Initdb configuration
-    ## ref: https://github.com/bitnami/containers/tree/main/bitnami/postgresql#specifying-initdb-arguments
-    primary:
-      initdb:
-        # -- specify the PostgreSQL username to execute the initdb scripts
-        user: postgres
+# PostgreSQL deployed by this chart
+postgres:
+  image:
+    # -- official PostgreSQL image
+    repository: postgres
+    tag: 17-alpine
+    pullPolicy: IfNotPresent
+  # -- database name for the connection string
+  database: server
+  # -- username for the connection string
+  username: prefect
+  # -- password for the user; stored in the prefect-postgres Secret
+  password: prefect-rocks
+  persistence:
+    enabled: false
+    size: 1Gi
 
-      ## persistence enables a PVC that stores the database between deployments. If making changes to the database deployment, this
-      ## PVC will need to be deleted for database changes to take effect. This is especially notable when the authentication password
-      ## changes on redeploys. This is disabled by default because we do not recommend using the subchart deployment for production deployments.
-      persistence:
-        # -- enable PostgreSQL Primary data persistence using PVC
-        enabled: false
-
-    image:
-      # -- Version tag, corresponds to tags at https://hub.docker.com/r/bitnami/postgresql/
-      tag: 14.3.0
+# Work pools created by the post-install/post-upgrade hook Job (templates/work-pools.yaml)
+workPools:
+  - name: itl-amalia
+    type: kubernetes

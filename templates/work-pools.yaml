@@ -1,0 +1,41 @@
+{{- if .Values.workPools }}
+{{- $image := index .Values "prefect-server" "global" "prefect" "image" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-work-pools
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: work-pools
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: work-pools
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: work-pools
+          image: "{{ $image.repository }}:{{ $image.prefectTag }}"
+          imagePullPolicy: {{ $image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until python -c "import urllib.request; urllib.request.urlopen('${PREFECT_API_URL}/health', timeout=5)"; do
+                echo "waiting for Prefect server"
+                sleep 5
+              done
+              {{- range .Values.workPools }}
+              prefect work-pool inspect {{ .name | quote }} > /dev/null 2>&1 || prefect work-pool create {{ .name | quote }} --type {{ .type | default "kubernetes" | quote }}
+              {{- end }}
+          env:
+            - name: PREFECT_API_URL
+              value: {{ printf "http://prefect-server.%s.svc.cluster.local:4200/api" .Release.Namespace | quote }}
+{{- end }}
