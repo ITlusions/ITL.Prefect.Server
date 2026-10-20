@@ -41,7 +41,7 @@ Helm wrapper around the upstream `prefect-server` chart, deployed to the `itl` c
 | `prefect-server` | Deployment, 1 replica | Prefect API and UI, port 4200 |
 | `prefect-server` | Service, ClusterIP | Only reachable through the ingress |
 | `prefect-server` | Ingress (Traefik) | TLS via cert-manager, `letsencrypt-issuer` |
-| `prefect-postgres` | Deployment, Service | Postgres 17, `emptyDir` storage (not persistent) |
+| `prefect-postgres` | Deployment, Service | Postgres 17, 5Gi Longhorn volume (`ha-dbs-lh`, 3 replicas) |
 | `prefect-server-postgres-bootstrap` | Job (pre-sync) | Creates the generated Secrets, only if missing |
 | `prefect-server-work-pools` | Job (post-sync) | Creates the `itl-amalia` Kubernetes work pool |
 
@@ -111,7 +111,7 @@ The worker itself is a separate chart (`ITL.Prefect.Worker`). It isn't deployed 
 
 ## Known limitations
 
-- **Postgres storage is `emptyDir`.** Data is lost when the pod restarts. Turning on `postgres.persistence` and moving to CloudNativePG would fix this.
+- **No database backups yet.** The Longhorn volume survives pod restarts, but nothing backs up the data. CloudNativePG would add backups.
 - **Basic auth only.** There's no SSO. An OIDC design (Keycloak, oauth2-proxy or a plugin) is under discussion.
 - **Network policy isn't enforced by the cluster's flannel CNI.** Any NetworkPolicy objects won't limit traffic until that's changed.
 - **Startup race.** The server can crash once if it starts before Postgres accepts connections. Restarting the deployment fixes it.

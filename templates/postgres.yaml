@@ -3,9 +3,14 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: prefect-postgres
+  annotations:
+    # Keep the database volume if the app is pruned or the release is removed
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: {{ .Values.postgres.persistence.storageClass | quote }}
   resources:
     requests:
       storage: {{ .Values.postgres.persistence.size | quote }}

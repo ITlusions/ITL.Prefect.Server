@@ -287,8 +287,10 @@ postgres:
     # -- image with a shell and kubectl, used by the one-time password Job
     image: alpine/k8s:1.31.4
   persistence:
-    enabled: false
-    size: 1Gi
+    # Longhorn volume: 3 replicas, Retain reclaim policy
+    enabled: true
+    storageClass: ha-dbs-lh
+    size: 5Gi
 
 # Basic auth: the bootstrap Job generates a random admin user named
 # <usernamePrefix>-<8 random characters>, plus a random password.
