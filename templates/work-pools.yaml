@@ -38,4 +38,10 @@ spec:
           env:
             - name: PREFECT_API_URL
               value: {{ printf "http://prefect-server.%s.svc.cluster.local:4200/api" .Release.Namespace | quote }}
+            # The API requires basic auth; the CLI reads the credential from this variable
+            - name: PREFECT_API_AUTH_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: prefect-server-basic-auth
+                  key: auth-string
 {{- end }}
