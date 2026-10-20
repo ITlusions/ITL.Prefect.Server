@@ -1,7 +1,10 @@
-# One-time bootstrap for the Postgres password.
+# One-time bootstrap for generated credentials.
 # Runs as a Helm pre-install/pre-upgrade hook (Argo CD maps these to PreSync).
-# It creates the prefect-postgres Secret with a random password only when the
-# Secret does not exist yet, so the password stays stable across syncs.
+# It creates two Secrets, each only when it does not exist yet, so the values
+# stay stable across syncs:
+#   - prefect-postgres: database password and connection string
+#   - prefect-server-basic-auth: keys "username" (random admin user) and
+#     "auth-string" ("<username>:<password>", used by the server)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -24,7 +27,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["prefect-postgres"]
+    resourceNames: ["prefect-postgres", "prefect-server-basic-auth"]
     verbs: ["get"]
   - apiGroups: [""]
     resources: ["secrets"]
@@ -73,15 +76,33 @@ spec:
           args:
             - |
               set -e
+
+              # random_password: 32 alphanumeric characters (safe in URLs and basic auth)
+              random_password() {
+                head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32
+              }
+
               if kubectl get secret prefect-postgres -n "$NAMESPACE" >/dev/null 2>&1; then
                 echo "Secret prefect-postgres already exists, keeping the current password"
-                exit 0
+              else
+                PASSWORD=$(random_password)
+                kubectl create secret generic prefect-postgres -n "$NAMESPACE" \
+                  --from-literal=password="$PASSWORD" \
+                  --from-literal=connection-string="postgresql+asyncpg://${POSTGRES_USER}:${PASSWORD}@prefect-postgres.${NAMESPACE}:5432/${POSTGRES_DB}"
+                echo "Created secret prefect-postgres"
               fi
-              PASSWORD=$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)
-              kubectl create secret generic prefect-postgres -n "$NAMESPACE" \
-                --from-literal=password="$PASSWORD" \
-                --from-literal=connection-string="postgresql+asyncpg://${POSTGRES_USER}:${PASSWORD}@prefect-postgres.${NAMESPACE}:5432/${POSTGRES_DB}"
-              echo "Created secret prefect-postgres"
+
+              if kubectl get secret prefect-server-basic-auth -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "Secret prefect-server-basic-auth already exists, keeping the current credential"
+              else
+                # random admin user: <prefix>-<8 lowercase characters>, so the name is not guessable
+                AUTH_USER="${BASIC_AUTH_USERNAME_PREFIX}-$(head -c 256 /dev/urandom | tr -dc 'a-z0-9' | head -c 8)"
+                AUTH_PASSWORD=$(random_password)
+                kubectl create secret generic prefect-server-basic-auth -n "$NAMESPACE" \
+                  --from-literal=username="$AUTH_USER" \
+                  --from-literal=auth-string="${AUTH_USER}:${AUTH_PASSWORD}"
+                echo "Created secret prefect-server-basic-auth"
+              fi
           env:
             - name: NAMESPACE
               valueFrom:
@@ -91,3 +112,5 @@ spec:
               value: {{ .Values.postgres.username | quote }}
             - name: POSTGRES_DB
               value: {{ .Values.postgres.database | quote }}
+            - name: BASIC_AUTH_USERNAME_PREFIX
+              value: {{ .Values.basicAuth.usernamePrefix | quote }}
