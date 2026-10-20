@@ -1,0 +1,93 @@
+# One-time bootstrap for the Postgres password.
+# Runs as a Helm pre-install/pre-upgrade hook (Argo CD maps these to PreSync).
+# It creates the prefect-postgres Secret with a random password only when the
+# Secret does not exist yet, so the password stays stable across syncs.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prefect-postgres-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prefect-postgres-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["prefect-postgres"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prefect-postgres-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prefect-postgres-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: prefect-postgres-bootstrap
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-postgres-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prefect-postgres-bootstrap
+    spec:
+      serviceAccountName: prefect-postgres-bootstrap
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          image: {{ .Values.postgres.bootstrap.image | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              if kubectl get secret prefect-postgres -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "Secret prefect-postgres already exists, keeping the current password"
+                exit 0
+              fi
+              PASSWORD=$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)
+              kubectl create secret generic prefect-postgres -n "$NAMESPACE" \
+                --from-literal=password="$PASSWORD" \
+                --from-literal=connection-string="postgresql+asyncpg://${POSTGRES_USER}:${PASSWORD}@prefect-postgres.${NAMESPACE}:5432/${POSTGRES_DB}"
+              echo "Created secret prefect-postgres"
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.username | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database | quote }}

@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prefect-server
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: prefect-server
+    app.kubernetes.io/part-of: itl-platform
+    app.kubernetes.io/component: workflow
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/ITlusions/ITL.Prefect.Server.git
+    # Chart lives at the repo root; charts/ already holds the packaged dependency
+    path: .
+    # Points at main. Sync only after the changes are pushed to main.
+    targetRevision: main
+    helm:
+      releaseName: prefect-server
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prefect
+
+  # Manual sync on purpose: no automated block, so nothing deploys until someone syncs.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10
+
+  info:
+    - name: 'Documentation URL'
+      value: 'https://prefect.dev.itlusions.com'
+    - name: 'Repository'
+      value: 'https://github.com/ITlusions/ITL.Prefect.Server'
